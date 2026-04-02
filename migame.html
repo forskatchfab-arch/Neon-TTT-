@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEON TIC TAC TOE - AUDIO EDITION</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-blue: #00d2ff;
+            --neon-pink: #ff007a;
+            --neon-purple: #9d50bb;
+            --bg-dark: #060b13;
+            --glow-strength: 20px;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Rajdhani', sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #060b13 100%);
+            touch-action: manipulation;
+        }
+
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        .screen {
+            display: none;
+            width: 100%;
+            max-width: 400px;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .screen.active { display: flex; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .neon-text-blue { text-shadow: 0 0 var(--glow-strength) var(--neon-blue); color: var(--neon-blue); }
+        .neon-text-pink { text-shadow: 0 0 var(--glow-strength) var(--neon-pink); color: var(--neon-pink); }
+
+        .btn-neon {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid var(--neon-blue);
+            color: var(--neon-blue);
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        .btn-neon:hover {
+            background: var(--neon-blue);
+            color: black;
+            box-shadow: 0 0 30px var(--neon-blue);
+        }
+
+        .grid-cell {
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px solid rgba(0, 210, 255, 0.1);
+            aspect-ratio: 1/1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            cursor: pointer;
+            border-radius: 15px;
+            transition: 0.2s;
+        }
+
+        .piece-x { color: var(--neon-blue); text-shadow: 0 0 10px var(--neon-blue); font-weight: 900; }
+        .piece-o { color: var(--neon-pink); text-shadow: 0 0 10px var(--neon-pink); font-weight: 900; }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(6, 11, 19, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            border-radius: 20px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--neon-blue);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- AUDIO ELEMENTS (Using royalty-free Web Audio API / Synth for zero-load time) -->
+    <script>
+        // Audio System
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+
+        const sounds = {
+            music: null,
+            isMusicPlaying: false,
+            settings: { music: 0.2, sfx: 0.5 }
+        };
+
+        function playTone(freq, type, duration, vol) {
+            if (sounds.settings.sfx === 0) return;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            gain.gain.setValueAtTime(vol * sounds.settings.sfx, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        }
+
+        function sfxClickX() { playTone(440, 'sine', 0.1, 0.5); }
+        function sfxClickO() { playTone(330, 'sine', 0.1, 0.5); }
+        function sfxWin() { 
+            playTone(523, 'square', 0.2, 0.3);
+            setTimeout(() => playTone(659, 'square', 0.2, 0.3), 100);
+            setTimeout(() => playTone(783, 'square', 0.4, 0.3), 200);
+        }
+        function sfxDraw() { playTone(110, 'sawtooth', 0.5, 0.2); }
+
+        // Simulated Background Music (Looped Synth Pad)
+        function startMusic() {
+            if (sounds.isMusicPlaying) return;
+            ctx.resume();
+            
+            const playBar = (time) => {
+                if (!sounds.isMusicPlaying) return;
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(82.41, time); // Low E
+                g.gain.setValueAtTime(0, time);
+                g.gain.linearRampToValueAtTime(sounds.settings.music, time + 2);
+                g.gain.linearRampToValueAtTime(0, time + 4);
+                osc.connect(g);
+                g.connect(ctx.destination);
+                osc.start(time);
+                osc.stop(time + 4);
+                setTimeout(() => playBar(ctx.currentTime), 4000);
+            };
+
+            sounds.isMusicPlaying = true;
+            playBar(ctx.currentTime);
+        }
+    </script>
+
+    <!-- INTRO MENU -->
+    <div id="menu-screen" class="screen active">
+        <h1 class="font-orbitron text-6xl font-black neon-text-blue mb-2">NEON</h1>
+        <h2 class="font-orbitron text-4xl neon-text-pink mb-12 tracking-widest">TTT</h2>
+        
+        <button class="btn-neon" onclick="initAudio(); startMode('pvp')">Local Player</button>
+        <button class="btn-neon" onclick="initAudio(); startMode('ai')">Vs Robot</button>
+        <button class="btn-neon" style="border-color: var(--neon-purple); color: var(--neon-purple);" onclick="initAudio(); showScreen('settings')">Settings</button>
+    </div>
+
+    <!-- SETTINGS SCREEN -->
+    <div id="settings-screen" class="screen">
+        <h2 class="font-orbitron text-3xl neon-text-blue mb-8">SETTINGS</h2>
+        <div class="w-full bg-white/5 p-6 rounded-2xl border border-white/10 mb-8">
+            <label class="block mb-2 text-[10px] tracking-widest uppercase">Music Volume</label>
+            <input type="range" min="0" max="50" value="20" class="mb-6" oninput="sounds.settings.music = this.value/100">
+            
+            <label class="block mb-2 text-[10px] tracking-widest uppercase">SFX Volume</label>
+            <input type="range" min="0" max="100" value="50" class="mb-6" oninput="sounds.settings.sfx = this.value/100">
+
+            <label class="block mb-2 text-[10px] tracking-widest uppercase">Glow Strength</label>
+            <input type="range" min="5" max="50" value="20" oninput="updateGlow(this.value)">
+        </div>
+        <button class="btn-neon" onclick="showScreen('menu')">Back to Menu</button>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="screen relative">
+        <div id="overlay">
+            <h2 id="winner-text" class="font-orbitron text-4xl mb-8 neon-text-blue text-center">X WINS</h2>
+            <button class="btn-neon w-64" onclick="resetGame()">Play Again</button>
+            <button class="mt-4 text-gray-500 uppercase text-xs tracking-widest" onclick="showScreen('menu')">Back to Menu</button>
+        </div>
+
+        <div class="w-full flex justify-between items-center mb-6 px-2">
+            <div class="text-center">
+                <p class="text-[10px] text-blue-400 font-bold">PLAYER X</p>
+                <p id="score-x" class="text-2xl font-orbitron">0</p>
+            </div>
+            <div id="turn-indicator" class="px-4 py-1 border border-blue-500 text-blue-500 rounded-full text-xs font-bold">X'S TURN</div>
+            <div class="text-center">
+                <p id="opponent-name" class="text-[10px] text-pink-400 font-bold">ROBOT</p>
+                <p id="score-o" class="text-2xl font-orbitron">0</p>
+            </div>
+        </div>
+
+        <div id="board" class="grid grid-cols-3 gap-3 w-full p-3 bg-white/5 rounded-3xl border border-white/10">
+            <div class="grid-cell" onclick="userMove(0)"></div>
+            <div class="grid-cell" onclick="userMove(1)"></div>
+            <div class="grid-cell" onclick="userMove(2)"></div>
+            <div class="grid-cell" onclick="userMove(3)"></div>
+            <div class="grid-cell" onclick="userMove(4)"></div>
+            <div class="grid-cell" onclick="userMove(5)"></div>
+            <div class="grid-cell" onclick="userMove(6)"></div>
+            <div class="grid-cell" onclick="userMove(7)"></div>
+            <div class="grid-cell" onclick="userMove(8)"></div>
+        </div>
+
+        <button class="mt-8 text-gray-500 font-bold tracking-widest text-xs uppercase" onclick="resetGame()">Reset Board</button>
+    </div>
+
+    <script>
+        let board = ["", "", "", "", "", "", "", "", ""];
+        let currentPlayer = "X";
+        let active = true;
+        let mode = "pvp";
+        let scores = { X: 0, O: 0 };
+
+        function initAudio() {
+            ctx.resume();
+            startMusic();
+        }
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id + '-screen').classList.add('active');
+            if(id === 'menu') resetGame(true);
+        }
+
+        function startMode(m) {
+            mode = m;
+            document.getElementById('opponent-name').innerText = m === 'ai' ? 'ROBOT' : 'PLAYER O';
+            showScreen('game');
+        }
+
+        function updateGlow(val) {
+            document.documentElement.style.setProperty('--glow-strength', val + 'px');
+        }
+
+        function userMove(i) {
+            if (!active || board[i] !== "") return;
+            executeMove(i);
+            
+            if (active && mode === 'ai' && currentPlayer === 'O') {
+                active = false;
+                setTimeout(aiMove, 600);
+            }
+        }
+
+        function executeMove(i) {
+            board[i] = currentPlayer;
+            const cells = document.querySelectorAll('.grid-cell');
+            cells[i].innerHTML = `<span class="piece-${currentPlayer.toLowerCase()}">${currentPlayer}</span>`;
+            
+            // SFX Play
+            if(currentPlayer === 'X') sfxClickX(); else sfxClickO();
+
+            if (checkWin(currentPlayer)) {
+                endGame(currentPlayer);
+            } else if (board.every(c => c !== "")) {
+                endGame("draw");
+            } else {
+                currentPlayer = currentPlayer === "X" ? "O" : "X";
+                updateStatus();
+            }
+        }
+
+        function aiMove() {
+            let available = board.map((v, i) => v === "" ? i : null).filter(v => v !== null);
+            if (available.length > 0) {
+                let random = available[Math.floor(Math.random() * available.length)];
+                active = true;
+                executeMove(random);
+            }
+        }
+
+        function checkWin(p) {
+            const patterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            return patterns.some(pattern => pattern.every(idx => board[idx] === p));
+        }
+
+        function updateStatus() {
+            const indicator = document.getElementById('turn-indicator');
+            indicator.innerText = `${currentPlayer}'S TURN`;
+            const color = currentPlayer === 'X' ? 'var(--neon-blue)' : 'var(--neon-pink)';
+            indicator.style.color = color;
+            indicator.style.borderColor = color;
+        }
+
+        function endGame(result) {
+            active = false;
+            const winText = document.getElementById('winner-text');
+            const overlay = document.getElementById('overlay');
+            
+            if (result === "draw") {
+                winText.innerText = "SYSTEM STALEMATE";
+                winText.style.color = "white";
+                sfxDraw();
+            } else {
+                winText.innerText = `${result} DOMINATION`;
+                winText.style.color = result === 'X' ? 'var(--neon-blue)' : 'var(--neon-pink)';
+                scores[result]++;
+                document.getElementById('score-x').innerText = scores.X;
+                document.getElementById('score-o').innerText = scores.O;
+                sfxWin();
+            }
+            
+            setTimeout(() => { overlay.style.display = 'flex'; }, 300);
+        }
+
+        function resetGame(fullReset = false) {
+            board = ["", "", "", "", "", "", "", "", ""];
+            currentPlayer = "X";
+            active = true;
+            document.getElementById('overlay').style.display = 'none';
+            document.querySelectorAll('.grid-cell').forEach(c => c.innerHTML = "");
+            if(fullReset) {
+                scores = { X: 0, O: 0 };
+                document.getElementById('score-x').innerText = "0";
+                document.getElementById('score-o').innerText = "0";
+            }
+            updateStatus();
+        }
+    </script>
+</body>
+</html>
